@@ -135,12 +135,5 @@ def main():
 
         lr_scheduler.step()
 
-        # Inference visualization every 20 epochs
-        if (epoch + 1) % 20 == 0:
-            print(f"Visualizing images after Epoch {epoch + 1}")
-            model.eval()
-            img = Image.open(args.image_path)
-            run_inference(img, model)
-
 if __name__ == "__main__":
     main()
