@@ -1,35 +1,44 @@
-import torch 
-import time 
+import torch
+import time
 import torchvision
-from tqdm.auto import tqdm 
-from datasets import load_dataset 
-from modeling_mae import MAE_ViT 
-from inference import run_inference 
+from tqdm.auto import tqdm
+from datasets import load_dataset
+from modeling_mae import MAE_ViT
+from inference import run_inference
 from torchvision import transforms
 import torch.nn.functional as F
 from configuration import MAEConfig
-from torch.utils.data import DataLoader 
+from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor, Compose, Normalize, Resize
-from utils import setup_seed ,  count_parameters , loading_data , ImageDataset
+from utils import setup_seed, count_parameters, loading_data, ImageDataset
 import argparse
 import math
 import os
 from PIL import Image
 
+
 # Setting up argparse for CLI arguments
 def parse_args():
     parser = argparse.ArgumentParser(description="Train MAE_ViT on CIFAR-10")
-
     parser.add_argument('--epochs', type=int, default=120, help="Number of training epochs (default: 120)")
     parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate (default: 1e-4)")
     parser.add_argument('--batch_size', type=int, default=128, help="Batch size for training and validation (default: 128)")
     parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for optimizer (default: 1e-4)")
     parser.add_argument('--eval_interval', type=int, default=100, help="Evaluation interval during training (default: 100 steps)")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility (default: 42)")
-    parser.add_argument('--image_path', type=str,help="Path to an image for inference visualization")
+    parser.add_argument('--image_path', type=str, help="Path to an image for inference visualization")
     parser.add_argument('--mask_ratio', type=float, default=0.75, help="Masking ratio for MAE (default: 0.75)")
 
     return parser.parse_args()
+
+
+def save_metrics(epoch, train_losses, val_losses, step_times, learning_rate):
+    with open(f'metrics_epoch_{epoch}.txt', 'w') as f:
+        f.write(f"Epoch: {epoch}\n")
+        f.write(f"Train Loss: {train_losses[-1]:.4f}\n")
+        f.write(f"Val Loss: {val_losses[-1]:.4f}\n")
+        f.write(f"Step Times (ms): {step_times}\n")
+        f.write(f"Learning Rate: {learning_rate:.6f}\n")
 
 
 def main():
@@ -140,11 +149,14 @@ def main():
 
         lr_scheduler.step()
 
-        # Save model every 40 epochs
+        # Save model and metrics every 40 epochs
         if (epoch + 1) % 40 == 0:
             save_path = os.path.join(save_dir, f"mae_vit_epoch_{epoch + 1}.pth")
             torch.save(model.state_dict(), save_path)
             print(f"Model checkpoint saved at: {save_path}")
+            
+            # Save metrics to text files
+            save_metrics(epoch + 1, train_losses, val_losses, step_times, lr_scheduler.get_last_lr()[0])
 
 if __name__ == "__main__":
     main()
