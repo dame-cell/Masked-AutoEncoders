@@ -1,146 +1,146 @@
 import torch 
-from utils import setup_seed ,  count_parameters  , loading_data ,  ImageDataset
-from modeling_mae import MAE 
-from configuration import Config 
-from  torch.utils.data import DataLoader 
-from tqdm.auto import tqdm 
 import time 
+import torchvision
+from tqdm.auto import tqdm 
+from datasets import load_dataset 
+from modeling_mae import MAE_ViT 
+from inference import run_inference 
+from torchvision import transforms
+import torch.nn.functional as F
+from configuration import MAEConfig
+from torch.utils.data import DataLoader 
+from torchvision.transforms import ToTensor, Compose, Normalize, Resize
+from utils import setup_seed ,  count_parameters , loading_data , ImageDataset
+import argparse
+import math
+from PIL import Image
 
-config = Config()
-setup_seed(seed=42)
+# Setting up argparse for CLI arguments
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train MAE_ViT on CIFAR-10")
 
-COMPILE = True 
-EPOCHS = 10 
-LR = 1e-5
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-EVAL_INTERVAL  = 100 
+    parser.add_argument('--epochs', type=int, default=120, help="Number of training epochs (default: 120)")
+    parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate (default: 1e-4)")
+    parser.add_argument('--batch_size', type=int, default=128, help="Batch size for training and validation (default: 128)")
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for optimizer (default: 1e-4)")
+    parser.add_argument('--eval_interval', type=int, default=100, help="Evaluation interval during training (default: 100 steps)")
+    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility (default: 42)")
+    parser.add_argument('--image_path', type=str,help="Path to an image for inference visualization")
+    parser.add_argument('--mask_ratio', type=float, default=0.75, help="Masking ratio for MAE (default: 0.75)")
 
-train_data , test_data = loading_data(dataset_name="ethz/food101",num_data=40_000)
-train_dataset = ImageDataset(train_data)
-test_dataset = ImageDataset(test_data)
+    return parser.parse_args()
 
-train_loader=  DataLoader(
-    train_dataset,
-    batch_size = 32, 
-    shuffle=True,
-    num_workers=4
-)
-test_loader = DataLoader(
-    test_dataset,
-    batch_size=16,
-    shuffle=True,
-    num_workers=4
-)
 
-model = Mae(config)
-print("Model Parameters:",count_parameters(model))
+def main():
+    args = parse_args()
 
-if COMPILE:
-    model = torch.compile(model)
-    torch.set_float32_matmul_precision('high')
+    config = MAEConfig()
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE,weight_decay=0.1)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    setup_seed(seed=args.seed)
 
-model.to(DEVICE)
-print("Starting to train")
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    DEVICE = torch.device(DEVICE)
 
-# Initialize lists to store metrics
-train_loss = []
-val_loss = []
-lr = []
-step_times = []
-grad_norms = []
+    transform = Compose([
+        Resize((32, 32)),  
+        ToTensor(),
+        Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))  
+    ])
 
-# Training loop
-for epoch in range(EPOCHS):
-    model.train()
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{EPOCHS}")
+    # Load the CIFAR-10 dataset with resizing
+    train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=transform)
+    val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=transform)
 
-    for step, image in progress_bar:
-        start_time = time.time()
-        image = image.to(DEVICE)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size, 
+        shuffle=True,
+        num_workers=4
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4
+    )
 
-        # Zero the gradients before backpropagation
-        optimizer.zero_grad()
+    model = MAE_ViT(config=config)
+    print("Model Parameters:", count_parameters(model))
+    model.to(DEVICE)
+
+    # Optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    # Learning rate scheduler
+    lr_func = lambda epoch: min((epoch + 1) / (10 + 1e-8), 0.5 * (math.cos(epoch / args.epochs * math.pi) + 1))
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func, verbose=True)
+
+    print("Starting to train")
+
+    # Initialize lists to store metrics
+    train_losses = []
+    val_losses = []
+    step_times = []
+
+    def calculate_loss(preds, image, mask, mask_ratio):
+        return torch.mean((preds - image) ** 2 * mask) / mask_ratio
+
+    for epoch in range(args.epochs):
+        model.train()
+        epoch_train_losses = []
+        step_times = []
         
-        # Forward pass
-        out, mask, ids_restore = model(image)
-        
-        
-        # Reshape image to match the output shape
-        image_patches = image.view(image.size(0), -1, out.size(-1))
+        progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{args.epochs}")
 
-        # Apply mask to both out and image_patches
-        masked_out = out[mask == 1]
-        masked_image_patches = image_patches[mask == 1]
+        for step, (image, _) in progress_bar:
+            start_time = time.time()
+            image = image.to(DEVICE)
 
-        # Calculate loss only on masked patches
-        loss = torch.mean((masked_out - masked_image_patches) ** 2) / 0.75
+            optimizer.zero_grad()
+            out, mask = model(image)
+            loss = calculate_loss(preds=out, image=image, mask=mask, mask_ratio=args.mask_ratio)
 
-        # Backward pass and gradient clipping
-        loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        
-        # Update model parameters
-        optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-        # Track training metrics
-        train_loss.append(loss.item())
-        grad_norms.append(grad_norm)
-        
-        end_time = time.time()
-        step_times.append((end_time - start_time) * 1000)  # Record step time in milliseconds
-        lr.append(scheduler.get_last_lr()[0])
-
-        # Update progress bar with current training metrics
-        progress_bar.set_postfix({
-            'loss': f"{loss.item():.4f}",
-            'grad_norm': f"{grad_norm:.4f}",
-            'step_time': f"{step_times[-1]:.4f}ms",
-            'lr': f"{lr[-1]:.6f}"
-        })
-
-        # Validation phase at specified intervals
-        if (step + 1) % EVAL_INTERVAL == 0:
-            model.eval()  # Set model to evaluation mode
-            val_running_loss = 0.0
+            epoch_train_losses.append(loss.item())
+            step_times.append((time.time() - start_time) * 1000)  # Step time in milliseconds
             
-            with torch.no_grad():  # Disable gradient computation
-                progress_bar_eval = tqdm(enumerate(test_loader), total=len(test_loader), desc=f"Evaluating")
-                
-                for val_step, val_image in progress_bar_eval:
-                    val_image = val_image.to(DEVICE)
-                    
-                    # Forward pass on validation images
-                    val_out, mask, ids_restore = model(val_image)
-                    
-                    # Reshape validation image to match the output shape
-                    val_image_patches = val_image.view(val_image.size(0), -1, val_out.size(-1))
-                    
-                    # Apply mask to both val_out and val_image_patches
-                    masked_val_out = val_out[mask == 1]
-                    masked_val_image_patches = val_image_patches[mask == 1]
-                    
-                    # Compute validation loss
-                    val_loss_value = torch.mean((masked_val_out - masked_val_image_patches) ** 2) / 0.75
-                    val_running_loss += val_loss_value.item()
-
-            # Calculate average validation loss and track it
-            avg_val_loss = val_running_loss / len(test_loader)
-            val_loss.append(avg_val_loss)
-
-            # Update validation progress bar with current metrics
-            progress_bar_eval.set_postfix({
-                'val_loss': f"{avg_val_loss:.4f}"
+            progress_bar.set_postfix({
+                'loss': f"{loss.item():.4f}",
+                'step_time': f"{(time.time() - start_time) * 1000:.4F}ms",
+                'lr': f"{lr_scheduler.get_last_lr()[0]:.6f}"
             })
+
+        avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
+        train_losses.append(avg_train_loss)
+
+        # Validation step
+        model.eval()  # Set the model to evaluation mode
+        epoch_val_losses = []
+
+        with torch.no_grad():  # Disable gradient tracking
+            val_progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Validation {epoch+1}/{args.epochs}")
             
-            model.train()  # Switch back to training mode
+            for val_step, (val_image, _) in val_progress_bar:
+                val_image = val_image.to(DEVICE)
+                out, mask = model(val_image)
+                val_loss = calculate_loss(preds=out, image=val_image, mask=mask, mask_ratio=args.mask_ratio)
+                epoch_val_losses.append(val_loss.item())
 
-    # Step the learning rate scheduler
-    scheduler.step()
+            avg_val_loss = sum(epoch_val_losses) / len(epoch_val_losses)
+            val_losses.append(avg_val_loss)
 
-print("Training complete")
+        print(f"Epoch {epoch + 1}/{args.epochs} - Train loss: {avg_train_loss:.4f}, Val loss: {avg_val_loss:.4f}")
 
+        lr_scheduler.step()
 
-print("Training complete")
+        # Inference visualization every 20 epochs
+        if (epoch + 1) % 20 == 0:
+            print(f"Visualizing images after Epoch {epoch + 1}")
+            model.eval()
+            img = Image.open(args.image_path)
+            run_inference(img, model)
+
+if __name__ == "__main__":
+    main()

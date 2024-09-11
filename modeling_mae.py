@@ -1,190 +1,151 @@
-import torch 
-import torch.nn as nn 
+import torch
+import timm
+import numpy as np
+
+from einops import repeat, rearrange
+from einops.layers.torch import Rearrange
+
 from timm.models.layers import trunc_normal_
-from timm.models.vision_transformer import Block, PatchEmbed
+from timm.models.vision_transformer import Block
+from configuration import MAEConfig 
 
-from utils import count_parameters
-from configuration import Config ,CifarConfig
+config = MAEConfig()
 
-cifarconfig = CifarConfig()
-config = Config()
-def random_masking(x, mask_ratio):
-        """
-        Perform per-sample random masking by per-sample shuffling.
-        Per-sample shuffling is done by argsort random noise.
-        x: [N, L, D], sequence
-        """
-        N, L, D = x.shape  # batch, length, dim
-        to_keep = int(L * (1 - mask_ratio)) # patches to keep  based on  the mask ratio
-        
-        noise = torch.rand(N, L, device=x.device)  # noise in [0, 1] generate random noise 
-        
-        # sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
-        ids_restore = torch.argsort(ids_shuffle, dim=1)
+def random_indexes(size : int):
+    forward_indexes = np.arange(size)
+    np.random.shuffle(forward_indexes)
+    backward_indexes = np.argsort(forward_indexes)
+    return forward_indexes, backward_indexes
 
-        # keep the first subset
-        ids_keep = ids_shuffle[:, :to_keep] # keep only the unmasked 
-        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
+def take_indexes(sequences, indexes):
+    return torch.gather(sequences, 0, repeat(indexes, 't b -> t b c', c=sequences.shape[-1]))
 
-        # generate the binary mask: 0 is keep, 1 is remove
-        mask = torch.ones([N, L], device=x.device)
-        mask[:, :to_keep] = 0
-        # unshuffle to get the binary mask
-        mask = torch.gather(mask, dim=1, index=ids_restore)
-
-        return x_masked, mask, ids_restore
-
-class Encoder(nn.Module):
-    def __init__(self, config):
+class PatchShuffle(torch.nn.Module):
+    def __init__(self, ratio) -> None:
         super().__init__()
-        self.patch = PatchEmbed(config.img_size, config.patch_size, config.in_chans, config.embed_dim)
-        num_patches = config.num_patches
-        
-        # Class token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, config.embed_dim))  # Shape: (1, 1, 1024)
-        
-        # Positional embedding
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, config.embed_dim), requires_grad=False)  
-        # Shape: (1, num_patches + 1, 1024)
-        
-        # Encoder blocks
-        self.encoder_blocks = nn.ModuleList([
-            Block(config.embed_dim, config.num_heads, config.mlp_ratio, qkv_bias=True, norm_layer=config.norm_layer)
-            for _ in range(config.depth)
-        ])
-        
-        # Normalization layer
-        self.norm = config.norm_layer(config.embed_dim)
+        self.ratio = ratio
+
+    def forward(self, patches : torch.Tensor):
+        T, B, C = patches.shape
+        remain_T = int(T * (1 - self.ratio))
+
+        indexes = [random_indexes(T) for _ in range(B)]
+        forward_indexes = torch.as_tensor(np.stack([i[0] for i in indexes], axis=-1), dtype=torch.long).to(patches.device)
+        backward_indexes = torch.as_tensor(np.stack([i[1] for i in indexes], axis=-1), dtype=torch.long).to(patches.device)
+
+        patches = take_indexes(patches, forward_indexes)
+        patches = patches[:remain_T]
+
+        return patches, forward_indexes, backward_indexes
+
+class MAE_Encoder(torch.nn.Module):
+    def __init__(self,
+                 image_size=32,
+                 patch_size=2,
+                 emb_dim=192,
+                 num_layer=12,
+                 num_head=3,
+                 mask_ratio=0.75,
+                 ) -> None:
+        super().__init__()
+
+        self.cls_token = torch.nn.Parameter(torch.zeros(1, 1, emb_dim))
+        self.pos_embedding = torch.nn.Parameter(torch.zeros((image_size // patch_size) ** 2, 1, emb_dim))
+        self.shuffle = PatchShuffle(mask_ratio)
+
+        self.patchify = torch.nn.Conv2d(3, emb_dim, patch_size, patch_size)
+
+        self.transformer = torch.nn.Sequential(*[Block(emb_dim, num_head) for _ in range(num_layer)])
+
+        self.layer_norm = torch.nn.LayerNorm(emb_dim)
+
+        self.init_weight()
 
     def init_weight(self):
         trunc_normal_(self.cls_token, std=.02)
-        trunc_normal_(self.pos_embed, std=.02)
-    
-    def forward(self, x):
-        # Patch embedding
-        x = self.patch(x)  
-        # Shape: (B, num_patches, embed_dim) = (B, num_patches, 1024)
+        trunc_normal_(self.pos_embedding, std=.02)
 
-        # Adding positional embeddings (excluding the cls_token)
-        x = x + self.pos_embed[:, 1:, :]  
-        # Shape: (B, num_patches, embed_dim) = (B, num_patches, 1024)
+    def forward(self, img):
+        patches = self.patchify(img)
+        patches = rearrange(patches, 'b c h w -> (h w) b c')
+        patches = patches + self.pos_embedding
 
-        # Random masking
-        x, mask, ids_restore = random_masking(x, mask_ratio=config.mask_ratio)  
-        # Shapes: x (B, L, 1024), mask (B, num_patches), ids_restore (B, num_patches)
+        patches, forward_indexes, backward_indexes = self.shuffle(patches)
 
-        # Adding cls_token
-        cls_token = self.cls_token + self.pos_embed[:, :1, :]  
-        # Shape: (1, 1, 1024)
-        
-        cls_tokens = cls_token.expand(x.shape[0], -1, -1)  
-        # Shape: (B, 1, 1024)
+        patches = torch.cat([self.cls_token.expand(-1, patches.shape[1], -1), patches], dim=0)
+        patches = rearrange(patches, 't b c -> b t c')
+        features = self.layer_norm(self.transformer(patches))
+        features = rearrange(features, 'b t c -> t b c')
 
-        # Concatenating cls_token to the sequence
-        x = torch.cat((cls_tokens, x), dim=1)  
-        # Shape: (B, L + 1, 1024)
+        return features, backward_indexes
 
-        # Passing through the encoder blocks
-        for blk in self.encoder_blocks:
-            x = blk(x)  
-        # Shape after each block: (B, L + 1, 1024)
-
-        # Normalization
-        x = self.norm(x)  
-        # Shape: (B, L + 1, 1024)
-
-        return x, mask, ids_restore
-
-
-class Decoder(nn.Module):
-    def __init__(self, config):
+class MAE_Decoder(torch.nn.Module):
+    def __init__(self,
+                 image_size=32,
+                 patch_size=2,
+                 emb_dim=192,
+                 num_layer=4,
+                 num_head=3,
+                 ) -> None:
         super().__init__()
 
-        # Linear projection from encoder embedding dimension to decoder embedding dimension
-        self.decoder_embed = nn.Linear(config.embed_dim, config.decoder_embed_dim, bias=True)  
-        # Shape: (B, L, decoder_embed_dim) = (B, L, 512)
+        self.mask_token = torch.nn.Parameter(torch.zeros(1, 1, emb_dim))
+        self.pos_embedding = torch.nn.Parameter(torch.zeros((image_size // patch_size) ** 2 + 1, 1, emb_dim))
 
-        # Mask token
-        self.mask = nn.Parameter(torch.zeros(1, 1, config.decoder_embed_dim))  
-        # Shape: (1, 1, 512)
+        self.transformer = torch.nn.Sequential(*[Block(emb_dim, num_head) for _ in range(num_layer)])
 
-        # Positional embedding for the decoder
-        self.pos_embed = nn.Parameter(torch.zeros(1, config.num_patches + 1, config.decoder_embed_dim), requires_grad=False)  
-        # Shape: (1, num_patches + 1, 512)
+        self.head = torch.nn.Linear(emb_dim, 3 * patch_size ** 2)
+        self.patch2img = Rearrange('(h w) b (c p1 p2) -> b c (h p1) (w p2)', p1=patch_size, p2=patch_size, h=image_size//patch_size)
 
-        # Decoder blocks
-        self.decoder_blocks = nn.ModuleList([
-            Block(config.decoder_embed_dim, config.decoder_num_heads, config.mlp_ratio, qkv_bias=True, norm_layer=config.norm_layer)
-            for _ in range(config.decoder_depth)
-        ])
-        
-        # Normalization layer
-        self.norm = config.norm_layer(config.decoder_embed_dim)
-
-        # Output projection to pixel space
-        self.out_linear = nn.Linear(config.decoder_embed_dim, config.patch_size**2 * config.in_chans, bias=True)  
-        # Shape: (B, num_patches + 1, patch_size**2 * in_chans) = (B, num_patches + 1, 768)
+        self.init_weight()
 
     def init_weight(self):
-        trunc_normal_(self.cls_token, std=.02)
-        trunc_normal_(self.pos_embed, std=.02)
-        
-    def forward(self, x, ids_restore):
-        # Embed tokens
-        x = self.decoder_embed(x)  
-        # Shape: (B, L, decoder_embed_dim) = (B, L, 512)
+        trunc_normal_(self.mask_token, std=.02)
+        trunc_normal_(self.pos_embedding, std=.02)
 
-        # Create mask tokens and append them to the sequence
-        mask_tokens = self.mask.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)  
-        # Shape: (B, num_masked_patches, decoder_embed_dim) = (B, num_masked_patches, 512)
+    def forward(self, features, backward_indexes):
+        T = features.shape[0]
+        backward_indexes = torch.cat([torch.zeros(1, backward_indexes.shape[1]).to(backward_indexes), backward_indexes + 1], dim=0)
+        features = torch.cat([features, self.mask_token.expand(backward_indexes.shape[0] - features.shape[0], features.shape[1], -1)], dim=0)
+        features = take_indexes(features, backward_indexes)
+        features = features + self.pos_embedding
 
-        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  
-        # Shape: (B, num_patches, decoder_embed_dim) = (B, num_patches, 512)
+        features = rearrange(features, 't b c -> b t c')
+        features = self.transformer(features)
+        features = rearrange(features, 'b t c -> t b c')
+        features = features[1:] # remove global feature
 
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  
-        # Shape: (B, num_patches, decoder_embed_dim) = (B, num_patches, 512)
+        patches = self.head(features)
+        mask = torch.zeros_like(patches)
+        mask[T-1:] = 1
+        mask = take_indexes(mask, backward_indexes[1:] - 1)
+        img = self.patch2img(patches)
+        mask = self.patch2img(mask)
 
-        # Append cls_token to the sequence
-        x = torch.cat([x[:, :1, :], x_], dim=1)  
-        # Shape: (B, num_patches + 1, decoder_embed_dim) = (B, num_patches + 1, 512)
+        return img, mask
 
-        # Add positional embedding
-        x = x + self.pos_embed  
-        # Shape: (B, num_patches + 1, decoder_embed_dim) = (B, num_patches + 1, 512)
+class MAE_ViT(torch.nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
 
-        # Passing through the decoder blocks
-        for blk in self.decoder_blocks:
-            x = blk(x)  
-        # Shape after each block: (B, num_patches + 1, 512)
+        self.encoder = MAE_Encoder(
+            image_size=config.image_size,
+            patch_size=config.patch_size,
+            emb_dim=config.emb_dim,
+            num_layer=config.encoder_layer,
+            num_head=config.encoder_head,
+            mask_ratio=config.mask_ratio
+        )
 
-        # Normalization
-        x = self.norm(x)  
-        # Shape: (B, num_patches + 1, 512)
+        self.decoder = MAE_Decoder(
+            image_size=config.image_size,
+            patch_size=config.patch_size,
+            emb_dim=config.emb_dim,
+            num_layer=config.decoder_layer,
+            num_head=config.decoder_head
+        )
 
-        # Projecting to pixel space
-        x = self.out_linear(x)  
-        # Shape: (B, num_patches + 1, patch_size**2 * in_chans) = (B, num_patches + 1, 768)
-
-        # Removing the cls_token
-        x = x[:, 1:, :]  
-        # Final Shape: (B, num_patches, patch_size**2 * in_chans) = (B, num_patches, 768)
-
-        return x
-
-
-class MAE(nn.Module):
-    def __init__(self, config):
-        super(MAE, self).__init__()
-        self.encoder = Encoder(config)
-        self.decoder = Decoder(config) 
-    
-    def forward(self, x):
-        encoded_features, mask, ids_restore = self.encoder(x)
-        out = self.decoder(encoded_features, ids_restore)
-        
-        return out,  mask , ids_restore
-
-if __name__ == "__main__":
-    model = MAE(cifarconfig)
-    print(count_parameters(model))
+    def forward(self, img):
+        features, backward_indexes = self.encoder(img)
+        predicted_img, mask = self.decoder(features, backward_indexes)
+        return predicted_img, mask
