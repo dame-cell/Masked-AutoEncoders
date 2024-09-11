@@ -3,3 +3,4 @@ timm
 numpy 
 datasets 
 torchvision 
+einops 

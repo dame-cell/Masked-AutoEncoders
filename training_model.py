@@ -13,6 +13,7 @@ from torchvision.transforms import ToTensor, Compose, Normalize, Resize
 from utils import setup_seed ,  count_parameters , loading_data , ImageDataset
 import argparse
 import math
+import os
 from PIL import Image
 
 # Setting up argparse for CLI arguments
@@ -33,6 +34,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # Directory for saving model checkpoints
+    save_dir = "checkpoints"
+    os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
 
     config = MAEConfig()
 
@@ -134,6 +139,12 @@ def main():
         print(f"Epoch {epoch + 1}/{args.epochs} - Train loss: {avg_train_loss:.4f}, Val loss: {avg_val_loss:.4f}")
 
         lr_scheduler.step()
+
+        # Save model every 40 epochs
+        if (epoch + 1) % 40 == 0:
+            save_path = os.path.join(save_dir, f"mae_vit_epoch_{epoch + 1}.pth")
+            torch.save(model.state_dict(), save_path)
+            print(f"Model checkpoint saved at: {save_path}")
 
 if __name__ == "__main__":
     main()
