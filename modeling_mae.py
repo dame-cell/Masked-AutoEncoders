@@ -152,26 +152,24 @@ class MAE_ViT(torch.nn.Module):
     
 
 
-class LinearProbe(torch.nn.Module):
-    def __init__(self, mae_model, num_classes, emb_dim=192):
-        super(LinearProbe, self).__init__()  
-        self.model_encoder = mae_model.encoder
-        self.model_encoder.requires_grad_(False) 
-        self.linear_head = torch.nn.Linear(emb_dim, num_classes)
+class ViT_Classifier(torch.nn.Module):
+    def __init__(self, model : MAE_Encoder, num_classes=10) -> None:
+        super().__init__()
+        self.encoder = model.encoder
+        self.cls_token =  self.encoder.cls_token
+        self.pos_embedding =  self.encoder.pos_embedding
+        self.patchify =  self.encoder.patchify
+        self.transformer =  self.encoder.transformer
+        self.layer_norm =  self.encoder.layer_norm
+        self.head = torch.nn.Linear(self.pos_embedding.shape[-1], num_classes)
 
-    def forward(self, x):
-        encoder_output = self.model_encoder(x)
-        
-        # Check if encoder_output is a tuple and extract the relevant tensor
-        if isinstance(encoder_output, tuple):
-            encoded_features = encoder_output[0]  # Assume the first element is the feature tensor
-        else:
-            encoded_features = encoder_output
-        
-        # Ensure encoded_features is in the correct shape
-        if encoded_features.dim() == 3:
-            encoded_features = encoded_features.transpose(0, 1)
-        
-        pooled_features = torch.mean(encoded_features, dim=1)  # Global avg pooling over sequence length
-        logits = self.linear_head(pooled_features)
+    def forward(self, img):
+        patches = self.patchify(img)
+        patches = rearrange(patches, 'b c h w -> (h w) b c')
+        patches = patches + self.pos_embedding
+        patches = torch.cat([self.cls_token.expand(-1, patches.shape[1], -1), patches], dim=0)
+        patches = rearrange(patches, 't b c -> b t c')
+        features = self.layer_norm(self.transformer(patches))
+        features = rearrange(features, 'b t c -> t b c')
+        logits = self.head(features[0])
         return logits
