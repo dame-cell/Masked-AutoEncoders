@@ -63,11 +63,17 @@ python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 For trying the pre-trained model you can head to this [colab notebook](https://colab.research.google.com/drive/1QOurYLXHTrNgxUcv7AqbiaFeaNmV6Oi4?usp=sharing)
 # Train and val loss 
 
-The model was train for only 320 epochs 
+The MAE  was train for only 320 epochs by self-supervised training  
 
 <p align="center">
   <img src="mae_loss.png" alt="dogs" width="900"/>
 </p>
+
+The Linear probe training was done on two stages for only 10 epochs 
+- training it without the pre-trained encoder 
+- training it with the pre-trained encoder
+
+### Results 
 
 # Refrence 
 The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE) with a few modifications 
