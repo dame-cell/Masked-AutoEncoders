@@ -81,7 +81,7 @@ Training it without the pre-trained encoder
 | `pre-trained encoder`| Learning rate                       | 1e-4           |
 
 <p align="center">
-  <img src="loss_plot(1).png" alt="Vanilla encoder" width="900"/>
+  <img src="loss_plot (1).png" alt="Vanilla encoder" width="900"/>
 </p>
 
 
