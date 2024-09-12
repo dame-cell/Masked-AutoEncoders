@@ -66,7 +66,7 @@ For trying the pre-trained model you can head to this [colab notebook](https://c
 The MAE  was train for only 320 epochs by self-supervised training  
 
 <p align="center">
-  <img src="mae_loss.png" alt="dogs" width="900"/>
+  <img src="mae_loss.png" alt="MAE LOSS" width="900"/>
 </p>
 
 The Linear probe training was done on two stages for only 10 epochs 
@@ -74,6 +74,16 @@ The Linear probe training was done on two stages for only 10 epochs
 - training it with the pre-trained encoder
 
 ### Results 
+Training it without the pre-trained encoder 
+| **Model** | **Train accuracy**                     | **Val accuracy**      |
+|--------------------|-------------------------------------|----------------|
+| `Vanilla encoder`| 64.32%         | 60.27%           |
+| `pre-trained encoder`| Learning rate                       | 1e-4           |
+
+<p align="center">
+  <img src="loss_plot(1).png" alt="Vanilla encoder" width="900"/>
+</p>
+
 
 # Refrence 
 The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE) with a few modifications 
