@@ -60,7 +60,7 @@ python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 | `lr_scheduler`     | Learning rate scheduler             | Cosine decay + warmup |
 
 # Inference 
-
+For trying the pre-trained model you can head to this (colab notebook)[https://colab.research.google.com/drive/1QOurYLXHTrNgxUcv7AqbiaFeaNmV6Oi4?usp=sharing] 
 # Train and val loss 
 
 The model was train for only 320 epochs 
