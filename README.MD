@@ -71,4 +71,4 @@ The model was train for only 320 epochs
 </p>
 
 # Refrence 
-The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE)
+The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE) with a few modifications 
