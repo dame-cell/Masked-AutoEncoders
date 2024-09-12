@@ -4,7 +4,7 @@ A simple, unofficial implementation of MAE ([Masked Autoencoders are Scalable Vi
 
 - The model is quite small with only 7 million parameters 
 - The model was train on the CIFAR10 dataset 
-- IT was train on for 320 epochs 
+- The model was train for only 320 Epochs  
 - We train the model on a single L4 GPU over the course of 8 hours 
 
 # Examples 
