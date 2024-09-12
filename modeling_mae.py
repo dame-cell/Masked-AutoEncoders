@@ -12,12 +12,17 @@ from configuration import MAEConfig
 config = MAEConfig()
 
 def random_indexes(size : int):
+    # Generate random permutation of indexes
     forward_indexes = np.arange(size)
     np.random.shuffle(forward_indexes)
+    # Generate inverse permutation
     backward_indexes = np.argsort(forward_indexes)
     return forward_indexes, backward_indexes
 
 def take_indexes(sequences, indexes):
+    # sequences shape: (T, B, C)
+    # indexes shape: (T, B)
+    # Output shape: (T, B, C)
     return torch.gather(sequences, 0, repeat(indexes, 't b -> t b c', c=sequences.shape[-1]))
 
 class PatchShuffle(torch.nn.Module):
@@ -26,6 +31,7 @@ class PatchShuffle(torch.nn.Module):
         self.ratio = ratio
 
     def forward(self, patches : torch.Tensor):
+        # patches shape: (T, B, C)
         T, B, C = patches.shape
         remain_T = int(T * (1 - self.ratio))
 
@@ -33,8 +39,9 @@ class PatchShuffle(torch.nn.Module):
         forward_indexes = torch.as_tensor(np.stack([i[0] for i in indexes], axis=-1), dtype=torch.long).to(patches.device)
         backward_indexes = torch.as_tensor(np.stack([i[1] for i in indexes], axis=-1), dtype=torch.long).to(patches.device)
 
+        # Shuffle and mask patches
         patches = take_indexes(patches, forward_indexes)
-        patches = patches[:remain_T]
+        patches = patches[:remain_T]  # Keep only unmasked patches
 
         return patches, forward_indexes, backward_indexes
 
@@ -53,6 +60,7 @@ class MAE_Encoder(torch.nn.Module):
         self.pos_embedding = torch.nn.Parameter(torch.zeros((image_size // patch_size) ** 2, 1, emb_dim))
         self.shuffle = PatchShuffle(mask_ratio)
 
+        # Convert image patches to embedding dimension
         self.patchify = torch.nn.Conv2d(3, emb_dim, patch_size, patch_size)
 
         self.transformer = torch.nn.Sequential(*[Block(emb_dim, num_head) for _ in range(num_layer)])
@@ -66,16 +74,19 @@ class MAE_Encoder(torch.nn.Module):
         trunc_normal_(self.pos_embedding, std=.02)
 
     def forward(self, img):
-        patches = self.patchify(img)
-        patches = rearrange(patches, 'b c h w -> (h w) b c')
-        patches = patches + self.pos_embedding
+        # img shape: (B, 3, H, W)
+        patches = self.patchify(img)  # Shape: (B, emb_dim, H/patch_size, W/patch_size)
+        patches = rearrange(patches, 'b c h w -> (h w) b c')  # Shape: (T, B, C) where T = H*W/patch_size^2
+        patches = patches + self.pos_embedding  # Add positional embedding
 
+        # Shuffle and mask patches
         patches, forward_indexes, backward_indexes = self.shuffle(patches)
 
+        # Add cls token
         patches = torch.cat([self.cls_token.expand(-1, patches.shape[1], -1), patches], dim=0)
-        patches = rearrange(patches, 't b c -> b t c')
+        patches = rearrange(patches, 't b c -> b t c')  # Shape: (B, T+1, C)
         features = self.layer_norm(self.transformer(patches))
-        features = rearrange(features, 'b t c -> t b c')
+        features = rearrange(features, 'b t c -> t b c')  # Shape: (T+1, B, C)
 
         return features, backward_indexes
 
@@ -104,23 +115,25 @@ class MAE_Decoder(torch.nn.Module):
         trunc_normal_(self.pos_embedding, std=.02)
 
     def forward(self, features, backward_indexes):
+        # features shape: (T, B, C)
+        # backward_indexes shape: (T', B) where T' is the total number of patches
         T = features.shape[0]
         backward_indexes = torch.cat([torch.zeros(1, backward_indexes.shape[1]).to(backward_indexes), backward_indexes + 1], dim=0)
         features = torch.cat([features, self.mask_token.expand(backward_indexes.shape[0] - features.shape[0], features.shape[1], -1)], dim=0)
-        features = take_indexes(features, backward_indexes)
-        features = features + self.pos_embedding
+        features = take_indexes(features, backward_indexes)  # Unshuffle patches
+        features = features + self.pos_embedding  # Add positional embedding
 
-        features = rearrange(features, 't b c -> b t c')
+        features = rearrange(features, 't b c -> b t c')  # Shape: (B, T', C)
         features = self.transformer(features)
-        features = rearrange(features, 'b t c -> t b c')
-        features = features[1:] # remove global feature
+        features = rearrange(features, 'b t c -> t b c')  # Shape: (T', B, C)
+        features = features[1:]  # Remove cls token
 
-        patches = self.head(features)
+        patches = self.head(features)  # Shape: (T'-1, B, 3*patch_size^2)
         mask = torch.zeros_like(patches)
-        mask[T-1:] = 1
-        mask = take_indexes(mask, backward_indexes[1:] - 1)
-        img = self.patch2img(patches)
-        mask = self.patch2img(mask)
+        mask[T-1:] = 1  # Create binary mask for original masked patches
+        mask = take_indexes(mask, backward_indexes[1:] - 1)  # Unshuffle mask
+        img = self.patch2img(patches)  # Shape: (B, 3, H, W)
+        mask = self.patch2img(mask)  # Shape: (B, 3, H, W)
 
         return img, mask
 
@@ -146,30 +159,30 @@ class MAE_ViT(torch.nn.Module):
         )
 
     def forward(self, img):
+        # img shape: (B, 3, H, W)
         features, backward_indexes = self.encoder(img)
         predicted_img, mask = self.decoder(features, backward_indexes)
         return predicted_img, mask
-    
-
 
 class ViT_Classifier(torch.nn.Module):
     def __init__(self, model : MAE_Encoder, num_classes=10) -> None:
         super().__init__()
         self.encoder = model.encoder
-        self.cls_token =  self.encoder.cls_token
-        self.pos_embedding =  self.encoder.pos_embedding
-        self.patchify =  self.encoder.patchify
-        self.transformer =  self.encoder.transformer
-        self.layer_norm =  self.encoder.layer_norm
+        self.cls_token = self.encoder.cls_token
+        self.pos_embedding = self.encoder.pos_embedding
+        self.patchify = self.encoder.patchify
+        self.transformer = self.encoder.transformer
+        self.layer_norm = self.encoder.layer_norm
         self.head = torch.nn.Linear(self.pos_embedding.shape[-1], num_classes)
 
     def forward(self, img):
-        patches = self.patchify(img)
-        patches = rearrange(patches, 'b c h w -> (h w) b c')
-        patches = patches + self.pos_embedding
-        patches = torch.cat([self.cls_token.expand(-1, patches.shape[1], -1), patches], dim=0)
-        patches = rearrange(patches, 't b c -> b t c')
+        # img shape: (B, 3, H, W)
+        patches = self.patchify(img)  # Shape: (B, emb_dim, H/patch_size, W/patch_size)
+        patches = rearrange(patches, 'b c h w -> (h w) b c')  # Shape: (T, B, C) where T = H*W/patch_size^2
+        patches = patches + self.pos_embedding  # Add positional embedding
+        patches = torch.cat([self.cls_token.expand(-1, patches.shape[1], -1), patches], dim=0)  # Add cls token
+        patches = rearrange(patches, 't b c -> b t c')  # Shape: (B, T+1, C)
         features = self.layer_norm(self.transformer(patches))
-        features = rearrange(features, 'b t c -> t b c')
-        logits = self.head(features[0])
+        features = rearrange(features, 'b t c -> t b c')  # Shape: (T+1, B, C)
+        logits = self.head(features[0])  # Use cls token for classification
         return logits
