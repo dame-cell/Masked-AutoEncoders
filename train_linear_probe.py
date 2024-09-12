@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train Linear Probe on CIFAR-10 with MAE_ViT encoder")
     parser.add_argument('--epochs', type=int, default=2, help="Number of training epochs (default: 2)")
     parser.add_argument('--pretrained', type=bool, default=True, help="Whether to use a pre-trained model or not")
-    parser.add_argument('--path_to_model', type=str,default=None, help="If pretrained, pass path to model")
+    parser.add_argument('--path_to_model', type=str, help="If pretrained, pass path to model")
     parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate (default: 1e-4)")
     parser.add_argument('--batch_size', type=int, default=12, help="Batch size for training and validation (default: 12)")
     parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for optimizer (default: 1e-4)")
