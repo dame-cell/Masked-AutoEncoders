@@ -56,7 +56,6 @@ python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 | `eval_interval`    | Evaluation interval during training  | 100 steps      |
 | `seed`             | Random seed for reproducibility      | 42             |
 | `mask_ratio`       | Masking ratio for MAE                | 0.75           |
-| `DEVICE`           | Computation device                  | "cuda" if available, else "cpu" |
 | `optimizer`        | Optimizer                           | AdamW          |
 | `lr_scheduler`     | Learning rate scheduler             | Cosine decay + warmup |
 
