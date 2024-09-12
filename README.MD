@@ -82,4 +82,4 @@ The Linear probe training was done on two stages for only 10 epochs
 
 
 # Refrence 
-The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE) with a few modifications 
+The code for the model was reference from [IcarusWizard](https://github.com/IcarusWizard/MAE) with a few modifications 
