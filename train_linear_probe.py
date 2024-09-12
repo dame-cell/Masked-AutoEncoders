@@ -16,7 +16,7 @@ from sklearn.metrics import accuracy_score
 from configuration import MAEConfig
 from utils import setup_seed, count_parameters
 from torch.optim.lr_scheduler import LambdaLR
-from modeling_mae import MAE_ViT, LinearProbe
+from modeling_mae import MAE_ViT, ViT_Classifier
 
 from huggingface_hub import hf_hub_download
 hf_hub_download(repo_id="damerajee/MAE", filename="model.pt", local_dir="model")
@@ -62,7 +62,7 @@ def main():
     mae_model = MAE_ViT(config=MAEConfig())  # Use your pre-trained MAE model
     if args.pretrained and args.path_to_model is not None:        
         mae_model.load_state_dict(torch.load(args.path_to_model))
-    linear_probe = LinearProbe(mae_model=mae_model, num_classes=10, emb_dim=192).to(DEVICE)
+    linear_probe = ViT_Classifier(model=mae_model, num_classes=10).to(DEVICE)
 
     print("Model Parameters:", count_parameters(linear_probe))
 
