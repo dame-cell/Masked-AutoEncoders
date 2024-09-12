@@ -74,15 +74,11 @@ The Linear probe training was done on two stages for only 10 epochs
 - training it with the pre-trained encoder
 
 ### Results 
-Training it without the pre-trained encoder 
 | **Model** | **Train accuracy**                     | **Val accuracy**      |
 |--------------------|-------------------------------------|----------------|
 | `Vanilla encoder`| 64.32%         | 60.27%           |
-| `pre-trained encoder`| Learning rate                       | 1e-4           |
+| `pre-trained encoder`| 96.13%,                     | 82.35%          |
 
-<p align="center">
-  <img src="loss_plot (1).png" alt="Vanilla encoder" width="900"/>
-</p>
 
 
 # Refrence 
