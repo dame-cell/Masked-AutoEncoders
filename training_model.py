@@ -33,12 +33,14 @@ def parse_args():
 
 
 def save_metrics(epoch, train_losses, val_losses, step_times, learning_rate):
-    with open(f'metrics_epoch_{epoch}.txt', 'w') as f:
+    # Open the file in append mode to keep writing metrics after each epoch
+    with open('metrics.txt', 'a') as f:
         f.write(f"Epoch: {epoch}\n")
         f.write(f"Train Loss: {train_losses[-1]:.4f}\n")
         f.write(f"Val Loss: {val_losses[-1]:.4f}\n")
         f.write(f"Step Times (ms): {step_times}\n")
         f.write(f"Learning Rate: {learning_rate:.6f}\n")
+        f.write('-' * 50 + '\n')  # Separator for readability
 
 
 def main():
@@ -130,10 +132,10 @@ def main():
         train_losses.append(avg_train_loss)
 
         # Validation step
-        model.eval()  # Set the model to evaluation mode
+        model.eval()
         epoch_val_losses = []
 
-        with torch.no_grad():  # Disable gradient tracking
+        with torch.no_grad():
             val_progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Validation {epoch+1}/{args.epochs}")
             
             for val_step, (val_image, _) in val_progress_bar:
@@ -149,14 +151,15 @@ def main():
 
         lr_scheduler.step()
 
-        # Save model and metrics every 40 epochs
+        # Save model every 40 epochs
         if (epoch + 1) % 40 == 0:
             save_path = os.path.join(save_dir, f"mae_vit_epoch_{epoch + 1}.pth")
             torch.save(model.state_dict(), save_path)
             print(f"Model checkpoint saved at: {save_path}")
-            
-            # Save metrics to text files
-            save_metrics(epoch + 1, train_losses, val_losses, step_times, lr_scheduler.get_last_lr()[0])
+        
+    # Save metrics after every epoch
+    save_metrics(epoch + 1, train_losses, val_losses, step_times, lr_scheduler.get_last_lr()[0])
+
 
 if __name__ == "__main__":
     main()
