@@ -4,3 +4,4 @@ numpy
 datasets 
 torchvision 
 einops 
+huggingface_hub
