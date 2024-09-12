@@ -157,11 +157,7 @@ def main():
 
         lr_scheduler.step()
 
-        # Save model every 40 epochs (adjust this if needed)
-        if (epoch + 1) % 1 == 0:
-            save_path = os.path.join(save_dir, f"linear_probe_epoch_{epoch + 1}.pth")
-            torch.save(linear_probe.state_dict(), save_path)
-            print(f"Model checkpoint saved at: {save_path}")
+
 
     # Plot training and validation loss
     plt.figure(figsize=(12, 6))
