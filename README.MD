@@ -26,16 +26,26 @@ A simple, unofficial implementation of MAE ([Masked Autoencoders are Scalable Vi
 
 - First git clone the repo 
 ```bash
-!git clone https://github.com/dame-cell/Masked-AutoEncoders.git
-%cd Masked-AutoEncoders
-!pip install  -r requirements.txt
+git clone https://github.com/dame-cell/Masked-AutoEncoders.git
+cd Masked-AutoEncoders
+pip install  -r requirements.txt
 ```
 # Usage 
 
 - For training the model you can simply 
 ```python 
-!python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
+python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 ```
+- For training the vanilla linear probe without the pretrained encoder
+- 
+```python 
+!python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained False 
+```
+- For training the vanilla linear probe with the pretrained encoder
+```python 
+!python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained True --path_to_model your downloaded model from hugginface 
+```
+
 # Hyper-parameters
 | **Hyperparameter** | **Description**                     | **Value**      |
 |--------------------|-------------------------------------|----------------|
