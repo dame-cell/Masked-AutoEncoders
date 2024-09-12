@@ -17,6 +17,7 @@ from configuration import MAEConfig
 from utils import setup_seed, count_parameters
 from torch.optim.lr_scheduler import LambdaLR
 from modeling_mae import MAE_ViT, LinearProbe
+
 from huggingface_hub import hf_hub_download
 hf_hub_download(repo_id="damerajee/MAE", filename="model.pt", local_dir="model")
 
@@ -24,7 +25,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train Linear Probe on CIFAR-10 with MAE_ViT encoder")
     parser.add_argument('--epochs', type=int, default=2, help="Number of training epochs (default: 2)")
     parser.add_argument('--pretrained', type=bool, default=True, help="Whether to use a pre-trained model or not")
-    parser.add_argument('--path_to_model', type=str, help="If pretrained, pass path to model")
+    parser.add_argument('--path_to_model', type=str,default=None, help="If pretrained, pass path to model")
     parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate (default: 1e-4)")
     parser.add_argument('--batch_size', type=int, default=12, help="Batch size for training and validation (default: 12)")
     parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for optimizer (default: 1e-4)")
@@ -59,7 +60,7 @@ def main():
 
     # Load pre-trained MAE model (assuming it's already loaded)
     mae_model = MAE_ViT(config=MAEConfig())  # Use your pre-trained MAE model
-    if args.pretrained:
+    if args.pretrained and args.path_to_model is not None:        
         mae_model.load_state_dict(torch.load(args.path_to_model))
     linear_probe = LinearProbe(mae_model=mae_model, num_classes=10, emb_dim=192).to(DEVICE)
 
