@@ -37,7 +37,7 @@ pip install  -r requirements.txt
 python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 ```
 - For training the vanilla linear probe without the pretrained encoder
-- 
+
 ```python 
 !python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained False 
 ```
