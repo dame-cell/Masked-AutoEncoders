@@ -69,3 +69,6 @@ The model was train for only 320 epochs
 <p align="center">
   <img src="mae_loss.png" alt="dogs" width="900"/>
 </p>
+
+# Refrence 
+The code for the model was taken from [IcarusWizard](https://github.com/IcarusWizard/MAE)
