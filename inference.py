@@ -1,6 +1,9 @@
 import torch
+import torch.nn.functional as F
+from torchvision import transforms
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image  # For loading images
 
 # Adjust normalization constants for the range [0, 1] instead of ImageNet specifics
 image_mean = np.array([0.5, 0.5, 0.5])
