@@ -36,12 +36,12 @@ pip install  -r requirements.txt
 ```python 
 python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 ```
-- For training the vanilla linear probe without the pretrained encoder
+- For training the  linear probe without the pretrained encoder
 
 ```python 
 !python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained False 
 ```
-- For training the vanilla linear probe with the pretrained encoder
+- For training the  linear probe with the pretrained encoder
 ```python 
 !python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained True --path_to_model your downloaded model from hugginface 
 ```
