@@ -1,4 +1,4 @@
-# MASKED AUTO ENCODERS 
+95# MASKED AUTO ENCODERS 
 
 A simple, unofficial implementation of MAE ([Masked Autoencoders are Scalable Vision Learners](https://arxiv.org/pdf/2111.06377))
 
@@ -49,7 +49,7 @@ python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 # Hyper-parameters
 | **Hyperparameter** | **Description**                     | **Value**      |
 |--------------------|-------------------------------------|----------------|
-| `epochs`           | Number of training epochs           | 120            |
+| `epochs`           | Number of training epochs           | 320            |
 | `lr`               | Learning rate                       | 1e-4           |
 | `batch_size`       | Batch size for training/validation   | 128            |
 | `weight_decay`     | Weight decay for optimizer           | 1e-4           |
