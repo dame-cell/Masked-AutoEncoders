@@ -42,6 +42,11 @@ python training_model.py --epochs 320 --lr 0.0001 --batch_size 128
 !python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained False 
 ```
 - For training the  linear probe with the pretrained encoder
+- first download the pre-trained model from huggingface
+```python
+from huggingface_hub import hf_hub_download
+hf_hub_download(repo_id="damerajee/MAE", filename="model.pt",local_dir="model")
+```
 ```python 
 !python train_linear_probe.py --epochs 10  --lr 0.0001 --batch_size 128 --pretrained True --path_to_model your downloaded model from hugginface 
 ```
