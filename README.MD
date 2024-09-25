@@ -7,6 +7,10 @@ A simple, unofficial implementation of MAE ([Masked Autoencoders are Scalable Vi
 - The model was train for 320 Epochs  
 - We train the model on a single L4 GPU over the course of 8 hours 
 
+<p align="center">
+  <img src="nae.png" alt="dogs" width="900"/>
+</p>
+
 # Examples 
 
 <p align="center">
